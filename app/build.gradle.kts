@@ -77,5 +77,8 @@ dependencies {
     implementation(libs.androidx.car.app)
     implementation(libs.androidx.car.app.projected)
 
+    // Location sharing with contacts, ported from Luogo-FOSS (see MERGE_NOTES.md)
+    implementation(project(":family"))
+
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

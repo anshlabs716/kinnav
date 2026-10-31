@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DrawerValue
@@ -67,13 +68,17 @@ import org.geonav.app.ui.screens.OfflineMapsScreen
 import org.geonav.app.ui.screens.SavedPlacesScreen
 import org.geonav.app.ui.screens.SettingsScreen
 import org.geonav.app.ui.theme.GeoNavTheme
+import org.geonav.family.ui.screens.FamilyDiagnosticsScreen
+import org.geonav.family.ui.screens.PeopleScreen
 
 enum class GeoNavScreen {
     MAP,
+    PEOPLE,
     SAVED_PLACES,
     OFFLINE_MAPS,
     SETTINGS,
-    ABOUT
+    ABOUT,
+    SHARING_DIAGNOSTICS
 }
 
 class MainActivity : ComponentActivity() {
@@ -151,7 +156,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "GeoNav",
+                                    text = "KinNav",
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFFF1F8F6)
@@ -172,6 +177,22 @@ class MainActivity : ComponentActivity() {
                                 selected = currentScreen == GeoNavScreen.MAP,
                                 onClick = {
                                     currentScreen = GeoNavScreen.MAP
+                                    coroutineScope.launch { drawerState.close() }
+                                },
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                            )
+
+                            NavigationDrawerItem(
+                                label = { Text("People", fontWeight = FontWeight.SemiBold) },
+                                icon = { Icon(Icons.Default.People, contentDescription = null) },
+                                selected = currentScreen == GeoNavScreen.PEOPLE,
+                                onClick = {
+                                    currentScreen = GeoNavScreen.PEOPLE
                                     coroutineScope.launch { drawerState.close() }
                                 },
                                 colors = NavigationDrawerItemDefaults.colors(
@@ -236,7 +257,7 @@ class MainActivity : ComponentActivity() {
                             )
 
                             NavigationDrawerItem(
-                                label = { Text("About GeoNav", fontWeight = FontWeight.SemiBold) },
+                                label = { Text("About KinNav", fontWeight = FontWeight.SemiBold) },
                                 icon = { Icon(Icons.Default.Info, contentDescription = null) },
                                 selected = currentScreen == GeoNavScreen.ABOUT,
                                 onClick = {
@@ -261,6 +282,11 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
+                        GeoNavScreen.PEOPLE -> {
+                            PeopleScreen(
+                                onNavigateBack = { currentScreen = GeoNavScreen.MAP }
+                            )
+                        }
                         GeoNavScreen.SAVED_PLACES -> {
                             SavedPlacesScreen(
                                 onNavigateBack = { currentScreen = GeoNavScreen.MAP },
@@ -277,7 +303,14 @@ class MainActivity : ComponentActivity() {
                         GeoNavScreen.SETTINGS -> {
                             SettingsScreen(
                                 onNavigateBack = { currentScreen = GeoNavScreen.MAP },
-                                onNavigateToAbout = { currentScreen = GeoNavScreen.ABOUT }
+                                onNavigateToAbout = { currentScreen = GeoNavScreen.ABOUT },
+                                onNavigateToSharing = { currentScreen = GeoNavScreen.PEOPLE },
+                                onNavigateToSharingDiagnostics = { currentScreen = GeoNavScreen.SHARING_DIAGNOSTICS }
+                            )
+                        }
+                        GeoNavScreen.SHARING_DIAGNOSTICS -> {
+                            FamilyDiagnosticsScreen(
+                                onNavigateBack = { currentScreen = GeoNavScreen.SETTINGS }
                             )
                         }
                         GeoNavScreen.ABOUT -> {

@@ -42,6 +42,9 @@ import org.geonav.app.ui.components.PlaceDetailSheet
 import org.geonav.app.ui.components.PositioningStatusBadge
 import org.geonav.app.ui.components.RoutePreviewSheet
 import org.geonav.app.ui.map.MapLibreMapView
+import org.geonav.family.Family
+import org.geonav.family.domain.PeerLocationState
+import org.geonav.app.ui.components.PersonSheet
 
 enum class NavigationUiState {
     IDLE,
@@ -66,6 +69,13 @@ fun MainMapScreen(
     val satelliteProviderUrl by app.settingsRepository.satelliteProviderUrl.collectAsState()
     val speedUnit by app.settingsRepository.speedUnit.collectAsState()
     val savedPlaces by app.placesRepository.allSavedPlaces.collectAsState(initial = emptyList())
+
+    // People layer: contacts currently sharing their position (from the :family module).
+    // With sharing off and no circles, this is always empty and the app is a plain map.
+    val familyRepo = remember { Family.repository }
+    val peers by (familyRepo?.peers ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<PeerLocationState>())).collectAsState()
+    var showPeopleLayer by remember { mutableStateOf(true) }
+    var selectedPeer by remember { mutableStateOf<PeerLocationState?>(null) }
 
     // Camera and map state
     var cameraTilt by remember { mutableDoubleStateOf(0.0) }
@@ -129,6 +139,11 @@ fun MainMapScreen(
             tilt = cameraTilt,
             activeRoute = selectedRoute,
             destinationPoint = selectedPlace?.location,
+            people = if (showPeopleLayer) peers else emptyList(),
+            showPeopleLayer = showPeopleLayer,
+            onPersonClicked = { peer ->
+                selectedPeer = peer
+            },
             onMapClicked = {
                 if (uiState == NavigationUiState.PLACE_SELECTED) {
                     uiState = NavigationUiState.IDLE
@@ -187,6 +202,7 @@ fun MainMapScreen(
             compassHeading = cameraBearing,
             is3D = cameraTilt > 10.0,
             isFollowingLocation = isFollowingLocation,
+            showPeopleLayer = showPeopleLayer,
             onCompassClick = {
                 recenterCounter++
             },
@@ -195,6 +211,9 @@ fun MainMapScreen(
             },
             onLayersClick = {
                 cycleMapLayer()
+            },
+            onPeopleToggle = {
+                showPeopleLayer = !showPeopleLayer
             },
             onRecenterClick = {
                 if (fusionState.location == null) {
@@ -218,6 +237,40 @@ fun MainMapScreen(
                     .align(Alignment.BottomStart)
                     .padding(start = 16.dp, bottom = 24.dp)
             )
+        }
+
+        // Person Sheet (a contact tapped on the map)
+        AnimatedVisibility(
+            visible = selectedPeer != null,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            selectedPeer?.let { peer ->
+                PersonSheet(
+                    peer = peer,
+                    onNavigateHere = { target ->
+                        val origin = fusionState.location ?: GeoPoint(37.7749, -122.4194)
+                        coroutineScope.launch {
+                            val routes = app.routingRepository.calculateRoutes(
+                                origin = origin,
+                                destination = GeoPoint(target.latitude, target.longitude),
+                                mode = selectedMode
+                            )
+                            availableRoutes = routes
+                            selectedRoute = routes.firstOrNull()
+                            uiState = if (routes.isNotEmpty()) {
+                                NavigationUiState.ROUTE_PREVIEW
+                            } else {
+                                Toast.makeText(context, "No route found", Toast.LENGTH_SHORT).show()
+                                NavigationUiState.IDLE
+                            }
+                        }
+                        selectedPeer = null
+                    },
+                    onDismiss = { selectedPeer = null }
+                )
+            }
         }
 
         // Place Detail Sheet

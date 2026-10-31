@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Quick Settings tile -->
+    <string name="family_share_tile_active">Location sharing: ON</string>
+    <string name="family_share_tile_inactive">Location sharing: OFF</string>
+
+    <!-- Foreground service notification -->
+    <string name="family_channel_name">Location sharing</string>
+    <string name="family_channel_desc">Shown while you are sharing your location with your people</string>
+    <string name="family_notification_title">KinNav sharing active</string>
+    <string name="family_notification_text">Sending your encrypted location to %1$d circle(s). Stopped: %2$s</string>
+    <string name="family_notification_no_stop">not set</string>
+    <string name="family_notification_stop">stopped %1$s</string>
+</resources>

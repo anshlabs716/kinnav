@@ -1,11 +1,20 @@
 cff-version: 1.2.0
-message: "If you use GeoNav in your work, please cite it as below."
-title: "GeoNav"
+message: "If you use KinNav in your work, please cite it as below."
+title: "KinNav"
 type: software
 authors:
   - family-names: "Bhatia"
     given-names: "Ansh"
     alias: "anshlabs716"
 repository-code: "https://github.com/anshlabs716/GeoNav"
-license: "NOASSERTION"
-abstract: "GeoNav"
+license: "GPL-3.0-or-later"
+abstract: >-
+  KinNav is a FOSS, privacy-first Android navigation platform with opt-in,
+  end-to-end-encrypted location sharing. It merges the GeoNav maps/navigation
+  app with the Luogo location-sharing engine.
+keywords:
+  - navigation
+  - maps
+  - privacy
+  - location-sharing
+  - free-and-open-source

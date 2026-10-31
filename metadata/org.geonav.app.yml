@@ -1,0 +1,46 @@
+Categories:
+  - Navigation
+LicenseRef: GPL-3.0-or-later
+Name: KinNav
+Summary: Privacy-first FOSS maps and navigation with opt-in, end-to-end-encrypted location sharing
+SourceCode: https://github.com/anshlabs716/GeoNav
+IssueTracker: https://github.com/anshlabs716/GeoNav/issues
+Changelog: https://github.com/anshlabs716/GeoNav/blob/main/CHANGELOG.md
+Donate: https://github.com/sponsors/anshlabs716
+
+AutoName: KinNav
+
+RepoType: git
+Repo: https://github.com/anshlabs716/GeoNav.git
+
+Builds:
+  - versionName: 1.0.0
+    versionCode: 1
+    commit: v1.0.0
+    subdir: app
+    gradle:
+      - yes
+    output: app/build/outputs/apk/debug/app-debug.apk
+    srclibs:
+      - none
+
+AllowedAPKSigningKeys:
+  - <fill-in-the-debug/release-signing-key-fingerprint>
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+CurrentVersion: 1.0.0
+CurrentVersionCode: 1
+
+# Notes
+# -----
+# * The APK is assembled with `./gradlew assembleDebug` (or `assembleRelease`
+#   once a release keystore is configured). F-Droid builds from source; no
+#   prebuilt binaries are published.
+# * `output:` points at the debug APK because the project has no release
+#   signing config yet. Switch to the release variant and set
+#   `AllowedAPKSigningKeys` once a release keystore exists.
+# * The app has no non-FOSS dependencies: no Google Play Services, no Firebase.
+# * The default relay (https://relay.luogo.app) is an optional, self-hostable
+#   service used only when the user enables location sharing; it is not part of
+#   the build and carries no data unless opted in. See PRIVACY.md.

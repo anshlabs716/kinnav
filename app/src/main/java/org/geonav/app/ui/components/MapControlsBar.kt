@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
@@ -39,9 +40,11 @@ fun MapControlsBar(
     compassHeading: Float,
     is3D: Boolean,
     isFollowingLocation: Boolean,
+    showPeopleLayer: Boolean = false,
     onCompassClick: () -> Unit,
     on3DToggle: () -> Unit,
     onLayersClick: () -> Unit,
+    onPeopleToggle: (() -> Unit)? = null,
     onRecenterClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -123,6 +126,30 @@ fun MapControlsBar(
                 contentDescription = stringResource(R.string.map_layers),
                 modifier = Modifier.size(20.dp)
             )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // People layer toggle (only wired when sharing UI is present)
+        if (onPeopleToggle != null) {
+            SmallFloatingActionButton(
+                onClick = onPeopleToggle,
+                containerColor = if (showPeopleLayer) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
+                contentColor = if (showPeopleLayer) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface,
+                elevation = FloatingActionButtonDefaults.elevation(3.dp),
+                shape = CircleShape,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("people_layer_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.People,
+                    contentDescription = "Toggle people layer",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
         }
 
         Spacer(modifier = Modifier.height(12.dp))

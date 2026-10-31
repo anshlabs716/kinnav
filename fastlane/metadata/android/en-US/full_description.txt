@@ -1,0 +1,26 @@
+KinNav is a free and open-source, privacy-first navigation app for Android. It combines powerful maps and turn-by-turn navigation with opt-in location sharing for the people you choose — with no accounts, no ads, no telemetry and no Google Play Services.
+
+MAPS & NAVIGATION
+* Worldwide vector maps (MapLibre + OpenStreetMap)
+* Turn-by-turn navigation for driving, walking and cycling, with route preview
+* Position fusion (GNSS + network + sensors) with tunnel dead-reckoning
+* Offline maps: download, manage and navigate with saved regions
+* Local and network search with history and saved places
+* Android Auto navigation
+* Import and export GPX, KML and GeoJSON
+
+LOCATION SHARING (ALWAYS OPT-IN)
+* Sharing is off by default and only sends data when you enable it for a specific circle. With sharing off, the app makes no network connections of its own.
+* Share only with the circles you create; every circle has its own on/off switch, plus a master switch and a one-tap emergency STOP.
+* End-to-end encrypted: positions are sealed with AES-256-GCM under a per-circle key. Keys are exchanged through invites and never sent to the server.
+* Works over your local network and through an optional relay that only ever forwards ciphertext. Point it at your own relay, or route through Tor.
+* Control precision: round your shared position to a grid (100 m, 500 m, 1 km or precise) before encryption.
+* No accounts, no phone number, no email. Your identity is a local Ed25519 keypair that never leaves your device.
+* Contacts who share appear as labelled dots on the map; tap one to navigate there.
+
+PRIVACY BY DEFAULT
+* No mandatory account, no ads, no unnecessary tracking, no ecosystem lock-in.
+* Saved places, search history and settings stay on your device.
+* Fully open source under GNU GPLv3.
+
+Maps and data © OpenStreetMap contributors. Map rendering by MapLibre.

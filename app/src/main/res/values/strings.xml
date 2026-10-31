@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">GeoNav</string>
-    <string name="app_tagline">Privacy-first FOSS navigation</string>
+    <string name="app_name">KinNav</string>
+    <string name="app_tagline">Privacy-first FOSS navigation &amp; sharing</string>
 
     <!-- Navigation & Map -->
     <string name="search_hint">Search places, addresses, coordinates…</string>
@@ -61,13 +61,13 @@
     <string name="confidence_high">High GNSS Confidence</string>
     <string name="confidence_medium">Medium Confidence</string>
     <string name="confidence_dead_reckoning">Dead Reckoning Active</string>
-    <string name="permission_location_prompt">GeoNav needs location access to provide real-time positioning and turn-by-turn navigation.</string>
+    <string name="permission_location_prompt">KinNav needs location access to provide real-time positioning and turn-by-turn navigation.</string>
     <string name="grant_permission">Grant Permission</string>
 
     <!-- Settings & About -->
     <string name="settings_title">Settings</string>
-    <string name="about_title">About GeoNav</string>
-    <string name="license_notice">GeoNav is Free and Open Source Software licensed under GNU GPLv3.</string>
+    <string name="about_title">About KinNav</string>
+    <string name="license_notice">KinNav is Free and Open Source Software licensed under GNU GPLv3.</string>
     <string name="osm_attribution">Map data © OpenStreetMap contributors, ODbL 1.0.</string>
     <string name="maplibre_attribution">Rendered natively with MapLibre Native.</string>
 </resources>

@@ -1,0 +1,7 @@
+First release of KinNav: the merge of GeoNav (maps & navigation) and Luogo (location sharing).
+
+* Maps, turn-by-turn navigation, offline maps, search, saved places and Android Auto.
+* New opt-in, end-to-end-encrypted location sharing: circles with per-circle switches, a master switch that defaults to off, invite keys/QR codes, a visibility-precision control and an emergency STOP.
+* People layer on the map: contacts who share appear as labelled dots; tap one to navigate there.
+* Relay + LAN sharing with optional Tor routing; self-hostable relay server included.
+* No accounts, no ads, no telemetry, no Google Play Services.

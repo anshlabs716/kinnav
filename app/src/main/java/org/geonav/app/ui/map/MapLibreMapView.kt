@@ -19,6 +19,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import org.geonav.app.data.model.GeoPoint
 import org.geonav.app.data.model.MapStyleType
 import org.geonav.app.data.model.Route
+import org.geonav.family.domain.PeerLocationState
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -28,6 +29,7 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
+import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
@@ -35,6 +37,15 @@ import org.maplibre.android.style.layers.PropertyFactory.lineCap
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
+import org.maplibre.android.style.layers.PropertyFactory.textField
+import org.maplibre.android.style.layers.PropertyFactory.textAnchor
+import org.maplibre.android.style.layers.PropertyFactory.textColor
+import org.maplibre.android.style.layers.PropertyFactory.textHaloColor
+import org.maplibre.android.style.layers.PropertyFactory.textHaloWidth
+import org.maplibre.android.style.layers.PropertyFactory.textSize
+import org.maplibre.android.style.layers.PropertyFactory.textOffset
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -46,6 +57,9 @@ private const val ROUTE_LAYER_ID = "geonav_route_layer"
 private const val PUCK_SOURCE_ID = "geonav_puck_source"
 private const val PUCK_LAYER_ID = "geonav_puck_layer"
 private const val PUCK_ACCURACY_LAYER_ID = "geonav_puck_accuracy_layer"
+private const val PEOPLE_SOURCE_ID = "geonav_people_source"
+private const val PEOPLE_LAYER_ID = "geonav_people_layer"
+private const val PEOPLE_LABEL_LAYER_ID = "geonav_people_label_layer"
 
 @Composable
 fun MapLibreMapView(
@@ -58,6 +72,9 @@ fun MapLibreMapView(
     tilt: Double = 0.0,
     activeRoute: Route? = null,
     destinationPoint: GeoPoint? = null,
+    people: List<PeerLocationState> = emptyList(),
+    showPeopleLayer: Boolean = true,
+    onPersonClicked: (PeerLocationState) -> Unit = {},
     onMapClicked: (GeoPoint) -> Unit = {},
     onUserGesture: () -> Unit = {},
     onCameraHeadingChanged: (Float) -> Unit = {}
@@ -97,6 +114,14 @@ fun MapLibreMapView(
             currentStyleObject = style
             updateRouteLayer(style, activeRoute)
             updateLocationPuck(style, userLocation)
+            updatePeopleLayer(style, if (showPeopleLayer) people else emptyList())
+        }
+    }
+
+    // Update the People layer (contacts sharing their position) when the list changes.
+    LaunchedEffect(people, showPeopleLayer, currentStyleObject) {
+        currentStyleObject?.let { style ->
+            updatePeopleLayer(style, if (showPeopleLayer) people else emptyList())
         }
     }
 
@@ -204,7 +229,17 @@ fun MapLibreMapView(
                     }
 
                     map.addOnMapClickListener { latLng ->
-                        onMapClicked(GeoPoint(latLng.latitude, latLng.longitude))
+                        // Prefer a tapped person marker over an empty-map long-press target.
+                        val tappedPerson = queryPersonAt(
+                            map,
+                            latLng,
+                            if (showPeopleLayer) people else emptyList()
+                        )
+                        if (tappedPerson != null) {
+                            onPersonClicked(tappedPerson)
+                        } else {
+                            onMapClicked(GeoPoint(latLng.latitude, latLng.longitude))
+                        }
                         true
                     }
 
@@ -213,6 +248,7 @@ fun MapLibreMapView(
                         currentStyleObject = style
                         updateRouteLayer(style, activeRoute)
                         updateLocationPuck(style, userLocation)
+                        updatePeopleLayer(style, if (showPeopleLayer) people else emptyList())
                     }
 
                     // Initial camera center
@@ -293,4 +329,92 @@ private fun updateRouteLayer(style: Style, activeRoute: Route?) {
         }
         style.addLayer(lineLayer)
     }
+}
+
+// ---------------------------------------------------------------------------- People layer
+
+private const val PROP_NAME = "geonav_person_name"
+private const val PROP_COLOR = "geonav_person_color"
+private const val PROP_OPACITY = "geonav_person_opacity"
+private const val HIT_SLOP_PX = 48f
+
+/**
+ * Draws the People layer: every contact who is currently sharing their position.
+ *
+ * Each person is a dot tinted with their configured colour, ringed white so it reads over
+ * any map style, with their name above it. Stale sightings are dimmed rather than hidden,
+ * so "someone was here recently" is still visible without implying they are live now.
+ */
+private fun updatePeopleLayer(style: Style, people: List<PeerLocationState>) {
+    if (!style.isFullyLoaded) return
+
+    val features = people.map { peer ->
+        val point = Point.fromLngLat(peer.longitude, peer.latitude)
+        Feature.fromGeometry(point).apply {
+            // Properties drive the label text and the per-person colour/opacity.
+            addStringProperty(PROP_NAME, peer.displayName)
+            addNumberProperty(PROP_COLOR, peer.colorArgb.toFloat())
+            addNumberProperty(PROP_OPACITY, if (peer.isStale()) 0.45f else 1.0f)
+        }
+    }
+    val collection = FeatureCollection.fromFeatures(features.toTypedArray())
+
+    val existingSource = style.getSourceAs<GeoJsonSource>(PEOPLE_SOURCE_ID)
+    if (existingSource != null) {
+        existingSource.setGeoJson(collection)
+        return
+    }
+
+    style.addSource(GeoJsonSource(PEOPLE_SOURCE_ID, collection))
+
+    // Per-person fill colour: the feature property holds an ARGB int, so a data-driven
+    // get() is all that's needed — no expression gymnastics.
+    val personColor = Expression.get(PROP_COLOR)
+
+    val dotLayer = CircleLayer(PEOPLE_LAYER_ID, PEOPLE_SOURCE_ID).apply {
+        setProperties(
+            circleRadius(9f),
+            circleColor(personColor),
+            circleStrokeColor(Color.WHITE),
+            circleStrokeWidth(2.5f),
+            // Stale sightings are dimmed instead of hidden.
+            circleOpacity(Expression.get(PROP_OPACITY)),
+        )
+    }
+    style.addLayer(dotLayer)
+
+    val labelLayer = SymbolLayer(PEOPLE_LABEL_LAYER_ID, PEOPLE_SOURCE_ID).apply {
+        setProperties(
+            textField(Expression.get(PROP_NAME)),
+            textSize(12f),
+            textAnchor("bottom"),
+            textOffset(arrayOf(0f, 1.4f)),
+            textColor(Color.rgb(33, 37, 41)),
+            textHaloColor(Color.WHITE),
+            textHaloWidth(1.5f),
+        )
+    }
+    style.addLayer(labelLayer)
+}
+
+/** Finds a person whose dot was within a few pixels of the tap, if any. */
+private fun queryPersonAt(
+    map: MapLibreMap,
+    latLng: LatLng,
+    people: List<PeerLocationState>,
+): PeerLocationState? {
+    if (people.isEmpty()) return null
+    val screenPoint = map.projection?.toScreenLocation(latLng) ?: return null
+    val box = android.graphics.RectF(
+        screenPoint.x - HIT_SLOP_PX,
+        screenPoint.y - HIT_SLOP_PX,
+        screenPoint.x + HIT_SLOP_PX,
+        screenPoint.y + HIT_SLOP_PX,
+    )
+    val hits = runCatching {
+        map.queryRenderedFeatures(box, PEOPLE_LAYER_ID)
+    }.getOrNull() ?: return null
+    if (hits.isEmpty()) return null
+    val name = hits.first().getStringProperty(PROP_NAME) ?: return null
+    return people.firstOrNull { it.displayName == name }
 }
