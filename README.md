@@ -100,30 +100,69 @@ kinnav/
 ├── .editorconfig
 ├── .gitattributes
 ├── .github/
+│   ├── CODEOWNERS
+│   ├── CONTRIBUTING.md
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml
+│   │   ├── config.yml
+│   │   ├── feature_request.yml
+│   │   └── question.yml
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   ├── release.yml
+│   └── workflows/
+│       ├── android-ci.yml
+│       ├── android-tests.yml
+│       ├── ci.yml
+│       ├── dependency-review.yml
+│       ├── links.yml
+│       ├── markdown-lint.yml
+│       ├── release.yml
+│       └── security.yml
 ├── .gitignore
 ├── .markdownlint-cli2.jsonc
-├── CHANGELOG.md
-├── CITATION.cff
-├── CODE_OF_CONDUCT.md
-├── COMPATIBILITY.md
-├── CONTRIBUTING.md
-├── DATA_SOURCES.md
-├── LICENSE
-├── MAP_ATTRIBUTION.md
-├── MERGE_NOTES.md
-├── PRIVACY.md
-├── README.md
-├── ROADMAP.md
-├── SECURITY.md
-├── SUPPORT.md
-├── THIRD_PARTY_NOTICES.md
 ├── app/
 │   ├── build.gradle.kts
 │   ├── proguard-rules.pro
 │   └── src/
 │       └── main/
 ├── build.gradle.kts
+├── CHANGELOG.md
+├── CITATION.cff
+├── CODE_OF_CONDUCT.md
+├── COMPATIBILITY.md
+├── CONTRIBUTING.md
+├── DATA_SOURCES.md
 ├── docs/
+│   ├── adr/
+│   │   └── README.md
+│   ├── android-auto.md
+│   ├── architecture.md
+│   ├── attribution-requirements.md
+│   ├── building.md
+│   ├── compatibility.md
+│   ├── configuration.md
+│   ├── data-providers.md
+│   ├── dependencies.md
+│   ├── development.md
+│   ├── faq.md
+│   ├── index.md
+│   ├── location-and-positioning.md
+│   ├── map-downloads.md
+│   ├── map-rendering.md
+│   ├── map-updates.md
+│   ├── navigation-profiles.md
+│   ├── offline-maps.md
+│   ├── privacy-and-networking.md
+│   ├── provider-licences.md
+│   ├── releasing.md
+│   ├── routing.md
+│   ├── satellite-imagery.md
+│   ├── search.md
+│   ├── storage-management.md
+│   ├── test-matrix.md
+│   ├── testing.md
+│   ├── third-party-dependencies.md
+│   └── troubleshooting.md
 ├── family/
 │   ├── build.gradle.kts
 │   ├── consumer-rules.pro
@@ -131,27 +170,43 @@ kinnav/
 │       ├── main/
 │       └── test/
 ├── fastlane/
+│   └── metadata/
+│       └── android/
 ├── gradle/
+│   ├── libs.versions.toml
+│   └── wrapper/
+│       ├── gradle-wrapper.jar
+│       └── gradle-wrapper.properties
 ├── gradle.properties
 ├── gradlew
 ├── gradlew.bat
+├── LICENSE
+├── MAP_ATTRIBUTION.md
+├── MERGE_NOTES.md
 ├── metadata/
+│   └── org.geonav.app.yml
 ├── metadata.json
+├── PRIVACY.md
+├── README.md
 ├── relay/
+│   ├── build.gradle.kts
 │   ├── Dockerfile
 │   ├── README.md
-│   ├── build.gradle.kts
 │   └── src/
 │       └── main/
+├── ROADMAP.md
+├── SECURITY.md
 ├── settings.gradle.kts
 ├── shared/
 │   ├── build.gradle.kts
 │   └── src/
 │       ├── main/
 │       └── test/
-└── src/
-    └── assets/
-        └── images/
+├── src/
+│   └── assets/
+│       └── images/
+├── SUPPORT.md
+└── THIRD_PARTY_NOTICES.md
 ```
 
 ---
