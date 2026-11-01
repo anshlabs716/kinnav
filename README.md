@@ -60,7 +60,67 @@ its own** until you turn it on.
 * **People layer on the map.** Contacts who share appear as labelled dots;
   tap one to **Navigate here**.
 
-## 🧱 Project structure
+## 📁 Project Files
+
+```text
+kinnav/
+├── .editorconfig
+├── .gitattributes
+├── .github/
+├── .gitignore
+├── .markdownlint-cli2.jsonc
+├── app/
+│   ├── build.gradle.kts
+│   ├── proguard-rules.pro
+│   ├── src/
+│   │   ├── main/
+├── build.gradle.kts
+├── CHANGELOG.md
+├── CITATION.cff
+├── CODE_OF_CONDUCT.md
+├── COMPATIBILITY.md
+├── CONTRIBUTING.md
+├── DATA_SOURCES.md
+├── docs/
+├── family/
+│   ├── build.gradle.kts
+│   ├── consumer-rules.pro
+│   ├── src/
+│   │   ├── main/
+│   │   ├── test/
+├── fastlane/
+├── gradle/
+├── gradle.properties
+├── gradlew
+├── gradlew.bat
+├── LICENSE
+├── MAP_ATTRIBUTION.md
+├── MERGE_NOTES.md
+├── metadata/
+├── metadata.json
+├── PRIVACY.md
+├── README.md
+├── relay/
+│   ├── build.gradle.kts
+│   ├── Dockerfile
+│   ├── README.md
+│   ├── src/
+│   │   ├── main/
+├── ROADMAP.md
+├── SECURITY.md
+├── settings.gradle.kts
+├── shared/
+│   ├── build.gradle.kts
+│   ├── src/
+│   │   ├── main/
+│   │   ├── test/
+├── src/
+│   ├── assets/
+│   │   ├── images/
+├── SUPPORT.md
+├── THIRD_PARTY_NOTICES.md
+```
+
 
 | Module | What it is |
 | ------ | ---------- |
