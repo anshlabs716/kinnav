@@ -162,6 +162,69 @@ Requires JDK 21 and the Android SDK (platform 35, build-tools 35).
 The `-PrelayOnly=true` flag skips the Android modules so the relay (and its
 Docker image) can be built on a plain JVM machine.
 
+## 📁 Project Files
+
+```text
+kinnav/
+├── .editorconfig
+├── .gitattributes
+├── .github/
+├── .gitignore
+├── .markdownlint-cli2.jsonc
+├── CHANGELOG.md
+├── CITATION.cff
+├── CODE_OF_CONDUCT.md
+├── COMPATIBILITY.md
+├── CONTRIBUTING.md
+├── DATA_SOURCES.md
+├── LICENSE
+├── MAP_ATTRIBUTION.md
+├── MERGE_NOTES.md
+├── PRIVACY.md
+├── README.md
+├── ROADMAP.md
+├── SECURITY.md
+├── SUPPORT.md
+├── THIRD_PARTY_NOTICES.md
+├── app/
+│   ├── build.gradle.kts
+│   ├── proguard-rules.pro
+│   └── src/
+│       └── main/
+├── build.gradle.kts
+├── docs/
+├── family/
+│   ├── build.gradle.kts
+│   ├── consumer-rules.pro
+│   └── src/
+│       ├── main/
+│       └── test/
+├── fastlane/
+├── gradle/
+├── gradle.properties
+├── gradlew
+├── gradlew.bat
+├── metadata/
+├── metadata.json
+├── relay/
+│   ├── Dockerfile
+│   ├── README.md
+│   ├── build.gradle.kts
+│   └── src/
+│       └── main/
+├── settings.gradle.kts
+├── shared/
+│   ├── build.gradle.kts
+│   └── src/
+│       ├── main/
+│       └── test/
+└── src/
+    └── assets/
+        └── images/
+```
+
+---
+
 ## 📜 License
 
 KinNav is licensed under the **GNU General Public License v3.0**.
