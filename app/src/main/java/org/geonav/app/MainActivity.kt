@@ -2,6 +2,7 @@ package org.geonav.app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -125,6 +126,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Runtime notification permission for Android 13+: without it the sharing
+                // foreground-service notification and guidance alerts are silently dropped
+                // by the system. Denial is non-fatal, so nothing blocks on the result.
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) { /* denial only means notifications stay hidden */ }
+
+                LaunchedEffect(Unit) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
@@ -150,7 +169,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Image(
                                         painter = painterResource(R.drawable.img_app_icon),
-                                        contentDescription = "GeoNav Icon",
+                                        contentDescription = "KinNav Icon",
                                         modifier = Modifier.size(50.dp)
                                     )
                                 }

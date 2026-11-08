@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
@@ -89,6 +90,8 @@ import org.geonav.family.domain.GroupCategory
 import org.geonav.family.domain.PeerGroup
 import org.geonav.family.domain.PeerLocationState
 import org.geonav.family.domain.formatAge
+import org.geonav.family.finding.FindingItem
+import org.geonav.family.finding.FindingRepository
 import org.geonav.family.qr.QrCodeEncoder
 import org.geonav.family.service.FamilyShareService
 import org.geonav.family.ui.components.CategoryIconTile
@@ -257,6 +260,11 @@ fun PeopleScreen(
                     }
                 }
 
+                // ---- Item finding (keys, bikes, luggage…) --------------------------
+                Family.finding?.let { findingRepo ->
+                    item { FindingSection(findingRepo, scope, context) }
+                }
+
                 item {
                     Spacer(Modifier.height(FamilySpacing.small))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -309,7 +317,15 @@ fun PeopleScreen(
                     showAddSheet = false
                     scope.launch {
                         val circle = repo.createGroup("Contact", GroupCategory.CUSTOM)
-                        inviteFor = circle
+                        if (circle != null) {
+                            inviteFor = circle
+                        } else withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                context,
+                                "Couldn't reach the relay — no circle created",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 }
                 SheetAction(
@@ -350,7 +366,11 @@ fun PeopleScreen(
                     val joined = repo.joinGroupFromInvitePayload(raw)
                     if (joined == null) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Invalid invite key", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                "Couldn't join: invite invalid, expired, already used, or relay unreachable",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     }
                 }
@@ -363,7 +383,16 @@ fun PeopleScreen(
             onDismiss = { showNewCircle = false },
             onCreate = { name, category ->
                 showNewCircle = false
-                scope.launch { repo.createGroup(name, category) }
+                scope.launch {
+                    val created = repo.createGroup(name, category)
+                    if (created == null) withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            context,
+                            "Couldn't reach the relay — circle not created",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
             },
         )
     }
@@ -599,8 +628,10 @@ private fun SheetAction(icon: ImageVector, title: String, subtitle: String, onCl
 @Composable
 private fun InviteSheet(group: PeerGroup, onClose: () -> Unit, context: Context) {
     var payload by remember { mutableStateOf<String?>(null) }
+    var inviteFailed by remember { mutableStateOf(false) }
     LaunchedEffect(group.id) {
         payload = Family.repository?.generateGroupInvitePayload(group.id)
+        inviteFailed = payload == null
     }
     ModalBottomSheet(onDismissRequest = onClose) {
         Column(
@@ -618,7 +649,15 @@ private fun InviteSheet(group: PeerGroup, onClose: () -> Unit, context: Context)
             Spacer(Modifier.height(FamilySpacing.small))
             val key = payload
             if (key == null) {
-                Text("Preparing invite…", style = MaterialTheme.typography.bodyMedium)
+                if (inviteFailed) {
+                    Text(
+                        text = "Couldn't mint an invite: the relay is unreachable or this device isn't a member of the circle. Check your connection and try again.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Text("Preparing invite…", style = MaterialTheme.typography.bodyMedium)
+                }
             } else {
                 OutlinedTextField(
                     value = key,
@@ -755,4 +794,239 @@ internal fun openAppSettings(context: Context) {
         Uri.fromParts("package", context.packageName, null),
     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { context.startActivity(intent) }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Item finding (keys, bikes, luggage…) — see org.geonav.family.finding
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The "Find items" section: add items, mark one lost (this device starts BLE-advertising
+ * its rotating id), locate a lost item through relayed sightings, and opt in to helping
+ * others by reporting beacons you see.
+ *
+ * Bluetooth permissions are requested lazily, only when the user actually flips a
+ * switch — never at screen open.
+ */
+@Composable
+private fun FindingSection(
+    finding: FindingRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
+    context: Context,
+) {
+    val items by finding.items.collectAsState()
+    val helpEnabled by finding.helpFindingEnabled.collectAsState()
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newItemName by remember { mutableStateOf("") }
+    var pendingAfterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    val btPermissions = arrayOf(
+        Manifest.permission.BLUETOOTH_ADVERTISE,
+        Manifest.permission.BLUETOOTH_SCAN,
+        Manifest.permission.BLUETOOTH_CONNECT,
+    )
+    val btLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        val anyGranted = granted.values.any { it }
+        if (anyGranted) pendingAfterPermission?.invoke()
+        else Toast.makeText(context, "Bluetooth permission was not granted", Toast.LENGTH_LONG).show()
+        pendingAfterPermission = null
+    }
+    fun withBluetooth(action: () -> Unit) {
+        val missing = btPermissions.filter {
+            androidx.core.content.ContextCompat.checkSelfPermission(context, it) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) action() else {
+            pendingAfterPermission = action
+            btLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    Column(verticalArrangement = ScreenGaps) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Find items",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add item")
+            }
+        }
+
+        // Help-others toggle: this device scans for other people's lost items and
+        // reports beacon sightings (rotating pseudonyms only) to the relay.
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Help others find their items", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Scan for KinNav item beacons nearby and relay where you saw them. You only ever send an anonymous rotating id and your position.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Switch(
+                    checked = helpEnabled,
+                    onCheckedChange = { enabled ->
+                        withBluetooth { finding.setHelpFindingEnabled(enabled) }
+                    },
+                )
+            }
+        }
+
+        if (items.isEmpty()) {
+            EmptyState(
+                icon = Icons.Default.MyLocation,
+                title = "Nothing to find yet",
+                body = "Add an item you care about. If it goes missing, mark it lost and any KinNav phone nearby can anonymously report where it was seen.",
+            )
+        } else {
+            items.forEach { item ->
+                FindingItemCard(
+                    item = item,
+                    finding = finding,
+                    scope = scope,
+                    onToggleLost = { lost ->
+                        withBluetooth { finding.setLostMode(item.id, lost) }
+                    },
+                    onRemove = { finding.removeItem(item.id) },
+                )
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("Add item") },
+            text = {
+                OutlinedTextField(
+                    value = newItemName,
+                    onValueChange = { newItemName = it },
+                    label = { Text("What is it?") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        finding.addItem(newItemName)
+                        newItemName = ""
+                        showAddDialog = false
+                    },
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun FindingItemCard(
+    item: FindingItem,
+    finding: FindingRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onToggleLost: (Boolean) -> Unit,
+    onRemove: () -> Unit,
+) {
+    var locateMessage by remember { mutableStateOf<String?>(null) }
+    var locating by remember { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.isLost) {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(item.name, style = MaterialTheme.typography.titleSmall)
+                    val lastSeen = item.lastSeenAtMs?.let { seenAt ->
+                        val acc = item.lastSeenAccuracyMeters?.let { " • ±${it.toInt()} m" } ?: ""
+                        "Seen ${formatAge(System.currentTimeMillis() - seenAt)}$acc"
+                    } ?: "Never located"
+                    Text(
+                        lastSeen,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = item.isLost,
+                    onCheckedChange = onToggleLost,
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (item.isLost) "Beaconing for helpers" else "Lost mode off",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (item.isLost) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    enabled = !locating,
+                    onClick = {
+                        locating = true
+                        locateMessage = "Asking the relay…"
+                        scope.launch {
+                            when (val outcome = finding.locate(item.id)) {
+                                is FindingRepository.LocateOutcome.Found ->
+                                    locateMessage = "Found: seen ${
+                                        formatAge(System.currentTimeMillis() - outcome.sighting.timestampMs)
+                                    } ±${outcome.sighting.accuracyMeters.toInt()} m"
+                                FindingRepository.LocateOutcome.NotSeen ->
+                                    locateMessage = "No sighting relayed in the last few hours."
+                                is FindingRepository.LocateOutcome.Error ->
+                                    locateMessage = outcome.message
+                            }
+                            locating = false
+                        }
+                    },
+                ) {
+                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (locating) "Locating…" else "Locate")
+                }
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Remove ${item.name}",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            locateMessage?.let { message ->
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }

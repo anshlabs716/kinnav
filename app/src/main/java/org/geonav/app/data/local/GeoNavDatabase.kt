@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import org.geonav.app.data.model.OfflineDownloadProfile
 import org.geonav.app.data.model.OfflineRegion
 import org.geonav.app.data.model.OfflineRegionStatus
+import org.geonav.app.data.model.RegionType
 
 @Database(
     entities = [
@@ -57,45 +58,52 @@ abstract class GeoNavDatabase : RoomDatabase() {
             }
 
             private suspend fun populateInitialData(database: GeoNavDatabase) {
+                // Seed only the *catalogue*: every region starts NOT_DOWNLOADED with no
+                // bytes on device. Nothing here may claim a download that never happened —
+                // real status and sizes are written by OfflineRepository after a real
+                // transfer from the configured server.
                 val sampleRegions = listOf(
                     OfflineRegion(
                         id = "region_wa",
                         name = "Western Australia",
                         country = "Australia",
+                        regionType = RegionType.STATE_PROVINCE,
                         minLat = -35.2,
                         minLon = 112.9,
                         maxLat = -13.7,
                         maxLon = 129.0,
-                        sizeBytes = 285 * 1024 * 1024L,
-                        lastUpdatedDate = "Updated today",
-                        status = OfflineRegionStatus.DOWNLOADED,
-                        downloadProgressPercent = 100,
+                        sizeBytes = 0,
+                        lastUpdatedDate = "Not downloaded",
+                        status = OfflineRegionStatus.NOT_DOWNLOADED,
+                        downloadProgressPercent = 0,
                         profile = OfflineDownloadProfile.DETAILED
                     ),
                     OfflineRegion(
                         id = "region_nsw",
                         name = "New South Wales",
                         country = "Australia",
+                        regionType = RegionType.STATE_PROVINCE,
                         minLat = -37.5,
                         minLon = 141.0,
                         maxLat = -28.1,
                         maxLon = 153.6,
-                        sizeBytes = 412 * 1024 * 1024L,
-                        lastUpdatedDate = "Updated 3 days ago",
-                        status = OfflineRegionStatus.UPDATE_AVAILABLE,
-                        downloadProgressPercent = 100,
+                        sizeBytes = 0,
+                        lastUpdatedDate = "Not downloaded",
+                        status = OfflineRegionStatus.NOT_DOWNLOADED,
+                        downloadProgressPercent = 0,
                         profile = OfflineDownloadProfile.COMPLETE
                     ),
                     OfflineRegion(
                         id = "region_california",
                         name = "California",
                         country = "United States",
+                        regionType = RegionType.STATE_PROVINCE,
                         minLat = 32.5,
                         minLon = -124.4,
                         maxLat = 42.0,
                         maxLon = -114.1,
-                        sizeBytes = 530 * 1024 * 1024L,
-                        lastUpdatedDate = "Ready to download",
+                        sizeBytes = 0,
+                        lastUpdatedDate = "Not downloaded",
                         status = OfflineRegionStatus.NOT_DOWNLOADED,
                         downloadProgressPercent = 0,
                         profile = OfflineDownloadProfile.DETAILED
@@ -104,12 +112,13 @@ abstract class GeoNavDatabase : RoomDatabase() {
                         id = "region_london",
                         name = "Greater London & South East",
                         country = "United Kingdom",
+                        regionType = RegionType.CITY,
                         minLat = 50.8,
                         minLon = -0.5,
                         maxLat = 51.7,
                         maxLon = 0.3,
-                        sizeBytes = 195 * 1024 * 1024L,
-                        lastUpdatedDate = "Ready to download",
+                        sizeBytes = 0,
+                        lastUpdatedDate = "Not downloaded",
                         status = OfflineRegionStatus.NOT_DOWNLOADED,
                         downloadProgressPercent = 0,
                         profile = OfflineDownloadProfile.COMPLETE

@@ -3,6 +3,7 @@ package org.geonav.family
 import android.content.Context
 import org.geonav.family.crypto.CryptoEngine
 import org.geonav.family.db.FamilyDatabase
+import org.geonav.family.finding.FindingRepository
 import org.geonav.family.network.RelayClient
 import org.geonav.family.repository.FamilyRepository
 import org.geonav.family.service.FamilyNotificationHelper
@@ -50,12 +51,19 @@ object Family {
     private var repositoryInstance: FamilyRepository? = null
 
     @Volatile
+    private var findingInstance: FindingRepository? = null
+
+    @Volatile
     var hooks: FamilyHooks? = null
         private set
 
     /** The sharing repository, or null before [init] runs. */
     val repository: FamilyRepository?
         get() = repositoryInstance
+
+    /** The item-finding repository, or null before [init] runs. */
+    val finding: FindingRepository?
+        get() = findingInstance
 
     /**
      * Builds the sharing stack and starts its inbound pipeline. Idempotent: the first call
@@ -81,6 +89,15 @@ object Family {
         )
         repository.start()
         repositoryInstance = repository
+        findingInstance = FindingRepository(
+            context = appContext,
+            prefs = prefs,
+            relayClient = relayClient,
+            // Finding helper reports want the freshest fix even when the sharing master
+            // switch is off; the fix cache is in-memory and gated from transmission.
+            fixProvider = { repository.latestSubmittedFix },
+            onLog = { message -> repository.appendLog(message) }
+        )
         return repository
     }
 

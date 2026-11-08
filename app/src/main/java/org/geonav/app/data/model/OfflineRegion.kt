@@ -49,6 +49,7 @@ data class OfflineRegion(
 ) {
     val formattedSize: String
         get() {
+            if (sizeBytes <= 0) return "Size unknown"
             val mb = sizeBytes / (1024.0 * 1024.0)
             return if (mb >= 1000) {
                 String.format("%.1f GB", mb / 1024.0)

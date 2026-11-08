@@ -28,12 +28,12 @@ import org.geonav.family.domain.GroupCategory
 import org.geonav.family.domain.NetworkConfig
 import org.geonav.family.domain.PeerGroup
 import org.geonav.family.domain.PeerLocationState
+import org.geonav.family.domain.PeerPayload
 import org.geonav.family.domain.SharedFix
 import org.geonav.family.domain.UserProfile
 import org.geonav.family.network.RelayClient
 import org.geonav.family.service.FamilyNotificationHelper
 import org.geonav.family.service.FamilyShareService
-import java.util.UUID
 import kotlin.math.cos
 import kotlin.math.round
 
@@ -73,6 +73,15 @@ class FamilyRepository(
     /** Last time a fix actually left the device; shown in diagnostics. */
     @Volatile
     var lastBroadcastMs: Long? = null
+        private set
+
+    /**
+     * The most recent fix the pipeline saw, in memory only. Feeds item-finding helper
+     * reports. Set BEFORE the sharing gates: seeing a fix is not sharing it — nothing
+     * here is transmitted unless the sharing switches say so.
+     */
+    @Volatile
+    var latestSubmittedFix: SharedFix? = null
         private set
 
     /** When the user last stopped sharing; drives the notification's stopped summary. */
@@ -166,49 +175,45 @@ class FamilyRepository(
 
     private fun applyInboundPayload(groupId: String?, plaintext: ByteArray) {
         val text = plaintext.toString(Charsets.UTF_8)
-        val lat = Regex("\"lat\"\\s*:\\s*([0-9.-]+)").find(text)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
-            ?: return
-        val lon = Regex("\"lon\"\\s*:\\s*([0-9.-]+)").find(text)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
-            ?: return
-        val name = Regex("\"name\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.getOrNull(1) ?: "Shared contact"
-        val timestamp = Regex("\"ts\"\\s*:\\s*(\\d+)").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()
-            ?: return
-        val accuracy = Regex("\"acc\"\\s*:\\s*([0-9.]+)").find(text)?.groupValues?.getOrNull(1)?.toFloatOrNull()
-            ?: 50f
-        val battery = Regex("\"bat\"\\s*:\\s*(\\d+)").find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        val color = Regex("\"color\"\\s*:\\s*(\\d+)").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()
-            ?: 0xFF0277BDL
-        val speed = Regex("\"spd\"\\s*:\\s*([0-9.]+)").find(text)?.groupValues?.getOrNull(1)?.toFloatOrNull() ?: 0f
-        val bearing = Regex("\"brg\"\\s*:\\s*([0-9.]+)").find(text)?.groupValues?.getOrNull(1)?.toFloatOrNull() ?: 0f
+        // Strict parse: either the whole payload is a sane location broadcast or it is
+        // dropped whole. No regex scraping means no partially-applied hostile input.
+        val payload = PeerPayload.parse(text) ?: run {
+            appendLog("Dropped malformed inbound payload in group ${groupId?.take(8) ?: "?"}")
+            return
+        }
+
+        val name = payload.name?.trim()?.ifEmpty { null } ?: "Shared contact"
         val activity = runCatching {
-            ActivityState.valueOf(
-                Regex("\"act\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.getOrNull(1)
-                    ?: "UNKNOWN"
-            )
-        }.getOrDefault(ActivityState.UNKNOWN)
+            payload.act?.let { ActivityState.valueOf(it) }
+        }.getOrNull() ?: ActivityState.UNKNOWN
 
         val state = PeerLocationState(
             // Keyed on the sender's stable id, not their display name, so renaming does not
             // fork someone into two entries. Falls back to the name for payloads from
             // parents that never sent an id.
-            userId = Regex("\"id\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.getOrNull(1)
-                ?.takeIf { it.isNotBlank() } ?: name,
+            userId = payload.id?.takeIf { it.isNotBlank() } ?: name,
             groupId = groupId.orEmpty(),
             displayName = name,
-            colorArgb = color,
-            latitude = lat,
-            longitude = lon,
-            accuracyMeters = accuracy,
-            speedMps = speed,
-            bearingDegrees = bearing,
-            batteryPercent = battery,
+            colorArgb = payload.color ?: 0xFF0277BDL,
+            latitude = payload.lat,
+            longitude = payload.lon,
+            accuracyMeters = payload.acc ?: 50f,
+            speedMps = payload.spd ?: 0f,
+            bearingDegrees = payload.brg ?: 0f,
+            batteryPercent = payload.bat,
             activityState = activity,
-            sourceSummary = "E2EE relay",
-            timestampMs = timestamp,
+            sourceSummary = payload.src ?: "E2EE relay",
+            timestampMs = payload.ts,
             isOnline = true
         )
         // Replace only this person's entry so updating one contact does not redraw the rest.
-        _peers.value = _peers.value.filterNot { it.userId == state.userId } + state
+        val now = System.currentTimeMillis()
+        _peers.value = _peers.value
+            .filterNot { it.userId == state.userId }
+            .let { list -> list + state }
+            // Prune: sightings past the retention window are gone, not dimmed forever.
+            // Keeps a phone that shared once months ago from haunting the list forever.
+            .filterNot { now - it.timestampMs > PEER_RETENTION_MS }
     }
 
     // ------------------------------------------------------------------ logs
@@ -338,6 +343,7 @@ class FamilyRepository(
      * activity's honest update interval, then encrypts once per opted-in group.
      */
     suspend fun submitFix(fix: SharedFix) {
+        latestSubmittedFix = fix
         val profile = userProfile.value
         if (!profile.sharingEnabled) return
         if (fix.isSuspiciousJump) {
@@ -410,7 +416,8 @@ class FamilyRepository(
                 broadcastCount++
             }
             appendLog(
-                "${if (sent) "Sent" else "Queued"} encrypted fix to '${group.name}' ($sourceTag)"
+                if (sent) "Sent encrypted fix to '${group.name}' ($sourceTag)"
+                else "Relay rejected/unreachable — fix NOT sent to '${group.name}' ($sourceTag)"
             )
         }
     }
@@ -474,10 +481,23 @@ class FamilyRepository(
 
     // ---------------------------------------------------------------- groups
 
-    suspend fun createGroup(name: String, category: GroupCategory): PeerGroup {
+    /**
+     * Creates a circle both locally and on the relay.
+     *
+     * The relay's group id is authoritative when it answers, so invites, joins and later
+     * publishes all address the same group. Returns null when the relay is unreachable —
+     * a circle that only exists locally cannot sync, so it is not silently half-created.
+     */
+    suspend fun createGroup(name: String, category: GroupCategory): PeerGroup? {
         val owner = userProfile.value
+        relayClient.ensureRegistered()
+        val serverGroup = relayClient.createGroup(name)
+        if (serverGroup == null) {
+            appendLog("Could not create '$name': relay unreachable — no circle created")
+            return null
+        }
         val group = PeerGroup(
-            id = "grp-" + UUID.randomUUID().toString().take(12),
+            id = serverGroup.first,
             name = name,
             category = category,
             ownerId = owner.id,
@@ -488,7 +508,7 @@ class FamilyRepository(
         )
         cryptoEngine.getOrCreateGroupKey(group.id)
         dao.upsertGroup(group.toEntity())
-        appendLog("Created group '$name'")
+        appendLog("Created group '$name' on relay")
         syncRelayConnection()
         return group
     }
@@ -508,20 +528,38 @@ class FamilyRepository(
      * Builds an invite that carries the group key sealed behind the relay's single-use token.
      *
      * The key itself is never sent to the server; only the owner-to-invitee blob is, and only
-     * the intended recipient holds the token.
+     * the intended recipient holds the token. Returns null when the relay cannot mint a
+     * token — a locally faked token would produce an invite that looks valid but can never
+     * be redeemed, so none is issued.
      */
-    suspend fun generateGroupInvitePayload(groupId: String): String {
+    suspend fun generateGroupInvitePayload(groupId: String): String? {
         val key = cryptoEngine.getOrCreateGroupKey(groupId)
         relayClient.ensureRegistered()
         val token = relayClient.createInviteToken(groupId)
-            ?: // Offline: mint a locally valid payload so the invite still works once sent.
-            "local-" + UUID.randomUUID().toString().take(16)
+        if (token == null) {
+            appendLog("Invite for $groupId failed: relay unreachable or not a member")
+            return null
+        }
         appendLog("Generated invite for group $groupId")
         return cryptoEngine.buildInvitePayload(groupId, token, key)
     }
 
+    /**
+     * Joins a circle by redeeming its invite with the relay, then importing the key.
+     *
+     * Server-side membership comes first: only once the relay accepts the single-use token
+     * is the group stored locally, so a rejected or unreachable join never leaves behind a
+     * circle that looks joined but can never send or receive.
+     */
     suspend fun joinGroupFromInvitePayload(rawInvite: String): PeerGroup? {
         val parsed = cryptoEngine.parseInvitePayload(rawInvite) ?: return null
+        relayClient.ensureRegistered()
+        if (!relayClient.joinGroup(parsed.groupId, parsed.inviteToken)) {
+            appendLog(
+                "Join for ${parsed.groupId} rejected: relay unreachable, or invite expired/used"
+            )
+            return null
+        }
         cryptoEngine.importGroupKey(parsed.groupId, parsed.groupKey)
         val group = PeerGroup(
             id = parsed.groupId,
@@ -539,16 +577,27 @@ class FamilyRepository(
     }
 
     suspend fun leaveOrDeleteGroup(groupId: String) {
+        // Server-side removal first: local deletion alone would leave this device
+        // authorised on the relay (still receiving ciphertext it can no longer read).
+        val leftOnRelay = relayClient.leaveGroup(groupId)
         dao.deleteGroup(groupId)
         // Removing the key is what actually revokes this device's ability to read the group.
         cryptoEngine.forgetGroupKey(groupId)
-        appendLog("Left group and deleted local key")
+        appendLog(
+            if (leftOnRelay) "Left group on relay, deleted local key"
+            else "Deleted local key — relay unreachable, still a member server-side until leave succeeds while online"
+        )
         // Last group gone and sharing off means nothing should stay connected.
         syncRelayConnection()
     }
 
     suspend fun removeMemberFromGroup(groupId: String, userId: String) {
+        val removed = relayClient.removeGroupMember(groupId, userId)
         dao.removeGroupMember(groupId, userId)
+        appendLog(
+            if (removed) "Removed member on relay"
+            else "Member removed locally — relay rejected it (only the group owner can remove others)"
+        )
     }
 
     // ------------------------------------------------------------- diagnostics
@@ -657,6 +706,9 @@ class FamilyRepository(
         private const val DEFAULT_DISPLAY_NAME = "KinNav user"
         private const val DEFAULT_COLOR = 0xFF006C4CL
         private const val METERS_PER_DEGREE_LAT = 111_320.0
+
+        /** Inbound sightings older than this are pruned from the peers list entirely. */
+        private const val PEER_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
 
         private const val KEY_DISPLAY_NAME = "profile.display.name"
         private const val KEY_DISPLAY_COLOR = "profile.display.color"

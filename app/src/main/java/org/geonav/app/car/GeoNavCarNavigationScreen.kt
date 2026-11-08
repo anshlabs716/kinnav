@@ -236,7 +236,7 @@ class GeoNavCarNavigationScreen(carContext: CarContext) : Screen(carContext), De
             .build()
 
         return PaneTemplate.Builder(paneBuilder.build())
-            .setTitle("GeoNav")
+            .setTitle("KinNav")
             .setActionStrip(actionStrip)
             .build()
     }

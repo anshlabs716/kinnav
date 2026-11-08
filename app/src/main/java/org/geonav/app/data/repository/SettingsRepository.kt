@@ -88,11 +88,6 @@ class SettingsRepository(context: Context) {
     )
     val autoUpdatePolicy: StateFlow<AutoUpdatePolicy> = _autoUpdatePolicy.asStateFlow()
 
-    private val _offlineServerUrl = MutableStateFlow(
-        prefs.getString("offline_server_url", "") ?: ""
-    )
-    val offlineServerUrl: StateFlow<String> = _offlineServerUrl.asStateFlow()
-
     fun setThemeMode(mode: AppThemeMode) {
         prefs.edit().putString("theme_mode", mode.name).apply()
         _themeMode.value = mode
@@ -146,10 +141,5 @@ class SettingsRepository(context: Context) {
     fun setAutoUpdatePolicy(policy: AutoUpdatePolicy) {
         prefs.edit().putString("auto_update_policy", policy.name).apply()
         _autoUpdatePolicy.value = policy
-    }
-
-    fun setOfflineServerUrl(url: String) {
-        prefs.edit().putString("offline_server_url", url).apply()
-        _offlineServerUrl.value = url
     }
 }

@@ -44,7 +44,7 @@ class RoutingRepository {
                 requestMethod = "GET"
                 connectTimeout = 5000
                 readTimeout = 5000
-                setRequestProperty("User-Agent", "GeoNav-Android-App/1.0")
+                setRequestProperty("User-Agent", "KinNav-Android-App/1.0 (https://github.com/anshlabs716/kinnav)")
             }
 
             if (connection.responseCode == 200) {

@@ -34,15 +34,19 @@ class TurnByTurnEngine {
         val route = activeRoute ?: return null
         if (route.steps.isEmpty()) return null
 
-        val currentStep = route.steps.getOrNull(currentStepIndex) ?: route.steps.last()
-        val nextStep = route.steps.getOrNull(currentStepIndex + 1)
-
-        val distanceToStep = currentLocation.distanceTo(currentStep.location)
+        var currentStep = route.steps.getOrNull(currentStepIndex) ?: route.steps.last()
+        var distanceToStep = currentLocation.distanceTo(currentStep.location)
 
         // If user is within 25 meters of current maneuver point, advance to next step
         if (distanceToStep < 25.0 && currentStepIndex < route.steps.size - 1) {
             currentStepIndex++
+            // Re-read after advancing: the card and the voice must announce the maneuver
+            // the driver is approaching, not the one just passed.
+            currentStep = route.steps[currentStepIndex]
+            distanceToStep = currentLocation.distanceTo(currentStep.location)
         }
+
+        val nextStep = route.steps.getOrNull(currentStepIndex + 1)
 
         // Check arrival
         val lastStep = route.steps.last()

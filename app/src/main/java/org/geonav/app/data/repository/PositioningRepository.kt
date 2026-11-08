@@ -20,7 +20,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.geonav.app.data.model.PositionFusionState
 import org.geonav.app.domain.engine.PositionFusionEngine
 
-class PositioningRepository(private val context: Context) : LocationListener, SensorEventListener {
+class PositioningRepository(
+    private val context: Context,
+    /**
+     * Reads the user's True North setting live: magnetic-heading compensation follows
+     * whatever the Settings screen currently says, not a hardcoded value.
+     */
+    private val trueNorthProvider: () -> Boolean = { true }
+) : LocationListener, SensorEventListener {
 
     private val fusionEngine = PositionFusionEngine()
     val fusionState: StateFlow<PositionFusionState> = fusionEngine.fusionState
@@ -185,7 +192,7 @@ class PositioningRepository(private val context: Context) : LocationListener, Se
             SensorManager.getOrientation(rotationMatrix, orientationAngles)
             val azimuthRad = orientationAngles[0]
             val azimuthDeg = ((Math.toDegrees(azimuthRad.toDouble()) + 360) % 360).toFloat()
-            fusionEngine.onSensorOrientationUpdate(azimuthDeg, isTrueNorthRequested = true)
+            fusionEngine.onSensorOrientationUpdate(azimuthDeg, isTrueNorthRequested = trueNorthProvider())
         }
     }
 

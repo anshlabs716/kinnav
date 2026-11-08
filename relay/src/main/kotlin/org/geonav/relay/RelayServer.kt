@@ -212,7 +212,13 @@ object RelayServer {
                 parts.size == 4 && parts[0] == "api" && parts[1] == "groups" && parts[3] == "members" && method == "DELETE" -> {
                     val target = query["userId"]
                         ?: return respondError(exchange, 400, "userId required")
-                    val removed = engine.removeMember(parts[2], user.id, target)
+                    val removed = if (target == user.id) {
+                        // Anyone may remove themselves; removing anyone else is the
+                        // owner's call, which removeMember enforces.
+                        engine.leaveGroup(parts[2], user.id)
+                    } else {
+                        engine.removeMember(parts[2], user.id, target)
+                    }
                     respond(
                         exchange,
                         if (removed) 200 else 403,

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.geonav.app.data.local.GeoNavDatabase
+import org.geonav.app.data.offline.MapLibreOfflineBridge
 import org.geonav.app.data.repository.OfflineRepository
 import org.geonav.app.data.repository.PlacesRepository
 import org.geonav.app.data.repository.PositioningRepository
@@ -62,13 +63,22 @@ class GeoNavApplication : Application() {
         placesRepository = PlacesRepository(database.savedPlacesDao())
         searchRepository = SearchRepository(database.searchHistoryDao(), database.savedPlacesDao())
         routingRepository = RoutingRepository()
-        positioningRepository = PositioningRepository(this)
-        offlineRepository = OfflineRepository(this, database.offlineRegionsDao(), settingsRepository)
+        positioningRepository = PositioningRepository(this) { settingsRepository.trueNorth.value }
+        offlineRepository = OfflineRepository(
+            this,
+            database.offlineRegionsDao(),
+            settingsRepository,
+            MapLibreOfflineBridge(this)
+        )
         dataExchangeManager = GeoNavDataExchangeManager()
 
         // Location sharing (the Luogo port in :family). Fully opt-in: nothing is sent
         // until the user turns sharing on from the People screen.
         Family.init(this, GeoNavFamilyHooks())
+
+        // Feed the in-memory fix cache for item-finding helper reports even when the
+        // sharing master switch is off. Collection only; transmission stays gated.
+        observeFusionForSharing()
     }
 
     /**

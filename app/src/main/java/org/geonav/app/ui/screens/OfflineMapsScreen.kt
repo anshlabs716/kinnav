@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,8 +73,16 @@ fun OfflineMapsScreen(
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val actualBytes = app.offlineRepository.getActualStorageUsageBytes()
-    val totalSizeMb = (actualBytes / (1024 * 1024)).coerceAtLeast(0)
+    // Reconcile the catalogue with what the renderer actually holds whenever this
+    // screen opens, so "Downloaded" always reflects a pack that exists.
+    LaunchedEffect(Unit) {
+        app.offlineRepository.syncWithPacks()
+    }
+
+    // Real bytes held by downloaded packs (from MapLibre pack status, not estimates).
+    val totalSizeMb = (regions
+        .filter { it.status == OfflineRegionStatus.DOWNLOADED }
+        .sumOf { it.sizeBytes } / (1024 * 1024)).coerceAtLeast(0)
 
     Scaffold(
         topBar = {
@@ -150,6 +159,32 @@ fun OfflineMapsScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
+            }
+
+            // Capability note, kept honest in both directions: packs are real MapLibre
+            // offline packs the renderer serves without network — but only under the
+            // style they were downloaded with, and the zoom range is capped at 8–15.
+            item {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    Text(
+                        text = "Downloaded packages are real offline packs: the map renders " +
+                            "them without a network connection, under the map style you're " +
+                            "using when you download (zoom levels 8–15). Downloads and " +
+                            "updates need connectivity; a style switch after downloading " +
+                            "needs a re-download for the new style.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
 
             items(regions) { region ->

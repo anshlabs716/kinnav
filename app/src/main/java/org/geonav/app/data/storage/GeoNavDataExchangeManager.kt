@@ -22,8 +22,8 @@ class GeoNavDataExchangeManager {
         try {
             val sb = StringBuilder()
             sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-            sb.append("<gpx version=\"1.1\" creator=\"GeoNav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
-            sb.append("  <metadata>\n    <name>GeoNav Saved Places</name>\n  </metadata>\n")
+            sb.append("<gpx version=\"1.1\" creator=\"KinNav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+            sb.append("  <metadata>\n    <name>KinNav Saved Places</name>\n  </metadata>\n")
 
             for (p in places) {
                 sb.append(String.format(Locale.US, "  <wpt lat=\"%.6f\" lon=\"%.6f\">\n", p.location.latitude, p.location.longitude))
@@ -46,7 +46,7 @@ class GeoNavDataExchangeManager {
             val sb = StringBuilder()
             sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             sb.append("<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n  <Document>\n")
-            sb.append("    <name>GeoNav Saved Places</name>\n")
+            sb.append("    <name>KinNav Saved Places</name>\n")
 
             for (p in places) {
                 sb.append("    <Placemark>\n")

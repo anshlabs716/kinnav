@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.EvStation
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.LocalHospital
@@ -62,6 +63,8 @@ fun FloatingSearchBar(
     onPlaceSelected: (Place) -> Unit,
     onMenuClicked: () -> Unit,
     onCategoryFilter: (String) -> Unit,
+    recentSearches: List<String> = emptyList(),
+    onRecentSearch: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -160,6 +163,47 @@ fun FloatingSearchBar(
                 CategoryChip(label = "Grocery", icon = Icons.Default.ShoppingCart) { onCategoryFilter("supermarket") }
                 Spacer(modifier = Modifier.width(6.dp))
                 CategoryChip(label = "Hospital", icon = Icons.Default.LocalHospital) { onCategoryFilter("hospital") }
+            }
+        }
+
+        // Recent searches (persisted locally; Settings can clear them)
+        if (query.isEmpty() && recentSearches.isNotEmpty()) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(max = 220.dp)
+            ) {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(recentSearches) { recent ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onRecentSearch(recent) }
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                                .testTag("recent_search_$recent")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = recent,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
             }
         }
 

@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import org.geonav.family.crypto.CryptoEngine
 import org.geonav.family.domain.NetworkConfig
+import org.geonav.family.finding.LatestSighting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +20,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -287,6 +294,74 @@ class RelayClient(
         }.getOrNull()
     }
 
+    /**
+     * Redeems an invite to join [groupId] as this device on the relay.
+     *
+     * Server-side membership is what authorises every later publish and receive: without
+     * it the relay answers 403 to each ciphertext. Returns true only when the server
+     * confirmed membership.
+     */
+    suspend fun joinGroup(groupId: String, inviteToken: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val token = authToken ?: ensureRegistered()?.let { authToken }
+                ?: return@withContext false
+            val body = "{\"token\":\"${escapeJson(inviteToken)}\"}"
+            runCatching {
+                buildClient().newCall(
+                    Request.Builder()
+                        .url(_networkConfig.value.relayUrl.trimEnd('/') + "/api/groups/$groupId/join")
+                        .addHeader("Authorization", "Bearer $token")
+                        .post(body.toRequestBody())
+                        .build()
+                ).execute().use { it.isSuccessful }
+            }.getOrDefault(false)
+        }
+
+    /**
+     * Removes this device's relay user from [groupId] (self-leave).
+     *
+     * Local deletion alone would leave the account authorised server-side, still
+     * receiving ciphertext it can no longer decrypt. Returns true only when the server
+     * confirmed the removal; if false the device remains a member until retried online.
+     */
+    suspend fun leaveGroup(groupId: String): Boolean = withContext(Dispatchers.IO) {
+        val token = authToken ?: return@withContext false
+        val userId = prefs.getString(KEY_USER_ID, null) ?: return@withContext false
+        runCatching {
+            buildClient().newCall(
+                Request.Builder()
+                    .url(
+                        _networkConfig.value.relayUrl.trimEnd('/') +
+                            "/api/groups/$groupId/members?userId=$userId"
+                    )
+                    .addHeader("Authorization", "Bearer $token")
+                    .delete()
+                    .build()
+            ).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Removes another member from [groupId]; only valid for the group owner, which the
+     * server enforces. Returns true only when the server confirmed the removal.
+     */
+    suspend fun removeGroupMember(groupId: String, targetUserId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val token = authToken ?: return@withContext false
+            runCatching {
+                buildClient().newCall(
+                    Request.Builder()
+                        .url(
+                            _networkConfig.value.relayUrl.trimEnd('/') +
+                                "/api/groups/$groupId/members?userId=$targetUserId"
+                        )
+                        .addHeader("Authorization", "Bearer $token")
+                        .delete()
+                        .build()
+                ).execute().use { it.isSuccessful }
+            }.getOrDefault(false)
+        }
+
     suspend fun createInviteToken(groupId: String): String? = withContext(Dispatchers.IO) {
         val token = authToken ?: return@withContext null
         runCatching {
@@ -321,6 +396,87 @@ class RelayClient(
                         .build()
                 ).execute().use { it.isSuccessful }
             }.getOrDefault(false)
+        }
+
+    // ------------------------------------------------------------- item finding
+
+    /**
+     * Reports a BLE sighting of someone's lost item to the relay.
+     *
+     * The helper knows nothing about the item — only the rotating id it saw. The report
+     * is authenticated so abuse can be traced, but the position is bound to a rotating
+     * pseudonym the relay cannot link across hours.
+     */
+    suspend fun reportSighting(
+        reportId: String,
+        rotatingBleIdHex: String,
+        latitude: Double,
+        longitude: Double,
+        accuracyMeters: Float,
+        rssiDbm: Int,
+        timestampMs: Long
+    ): Boolean = withContext(Dispatchers.IO) {
+        val token = authToken ?: return@withContext false
+        val body = buildString {
+            append("{")
+            append("\"reportId\":\"").append(escapeJson(reportId)).append("\",")
+            append("\"rotatingBleId\":\"").append(escapeJson(rotatingBleIdHex)).append("\",")
+            append("\"latitude\":").append(latitude).append(",")
+            append("\"longitude\":").append(longitude).append(",")
+            append("\"accuracy\":").append(accuracyMeters).append(",")
+            append("\"rssi\":").append(rssiDbm).append(",")
+            append("\"payload\":\"\",")
+            append("\"authTag\":\"\",")
+            append("\"timestamp\":").append(timestampMs)
+            append("}")
+        }
+        runCatching {
+            buildClient().newCall(
+                Request.Builder()
+                    .url(_networkConfig.value.relayUrl.trimEnd('/') + "/api/sightings")
+                    .addHeader("Authorization", "Bearer $token")
+                    .post(body.toRequestBody())
+                    .build()
+            ).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Asks the relay for the most recent sighting of [rotatingBleIdHex].
+     *
+     * Returns null when there is none (404), the request fails, or the answer does not
+     * parse — the caller cannot distinguish those, which is fine: all mean "no usable
+     * position right now".
+     */
+    suspend fun latestSighting(rotatingBleIdHex: String): LatestSighting? =
+        withContext(Dispatchers.IO) {
+            val token = authToken ?: return@withContext null
+            runCatching {
+                buildClient().newCall(
+                    Request.Builder()
+                        .url(
+                            _networkConfig.value.relayUrl.trimEnd('/') +
+                                "/api/items/$rotatingBleIdHex/sighting"
+                        )
+                        .addHeader("Authorization", "Bearer $token")
+                        .get()
+                        .build()
+                ).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val answer = this@RelayClient.json
+                        .parseToJsonElement(response.body?.string().orEmpty())
+                        .jsonObject
+                    val lat = answer["latitude"]?.jsonPrimitive?.doubleOrNull ?: return@use null
+                    val lon = answer["longitude"]?.jsonPrimitive?.doubleOrNull ?: return@use null
+                    LatestSighting(
+                        latitude = lat,
+                        longitude = lon,
+                        accuracyMeters = answer["accuracy"]?.jsonPrimitive?.floatOrNull ?: 999f,
+                        rssiDbm = answer["rssi"]?.jsonPrimitive?.intOrNull ?: -127,
+                        timestampMs = answer["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L
+                    )
+                }
+            }.getOrNull()
         }
 
     // -------------------------------------------------------------- websocket

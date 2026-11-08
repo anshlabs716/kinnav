@@ -105,7 +105,7 @@ class SearchRepository(
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 4000
                 readTimeout = 4000
-                setRequestProperty("User-Agent", "GeoNav-Android-App/1.0 (contact@geonav.app)")
+                setRequestProperty("User-Agent", "KinNav-Android-App/1.0 (https://github.com/anshlabs716/kinnav)")
             }
 
             if (connection.responseCode == 200) {
@@ -180,6 +180,9 @@ class SearchRepository(
     suspend fun saveSearchQuery(query: String) = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isNotBlank()) {
+            // Move-to-top: drop any earlier row for the same text so history never
+            // lists the same query twice.
+            searchHistoryDao.deleteByQuery(trimmed)
             searchHistoryDao.insertSearch(SearchHistoryEntity(query = trimmed))
         }
     }

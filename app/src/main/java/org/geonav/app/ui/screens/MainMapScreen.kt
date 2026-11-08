@@ -1,5 +1,6 @@
 package org.geonav.app.ui.screens
 
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,8 +34,11 @@ import org.geonav.app.data.model.GeoPoint
 import org.geonav.app.data.model.MapStyleType
 import org.geonav.app.data.model.Place
 import org.geonav.app.data.model.Route
+import org.geonav.app.data.model.RouteStep
 import org.geonav.app.data.model.SearchResult
 import org.geonav.app.data.model.TransportMode
+import org.geonav.app.domain.engine.GuidanceState
+import org.geonav.app.domain.engine.TurnByTurnEngine
 import org.geonav.app.ui.components.FloatingSearchBar
 import org.geonav.app.ui.components.ManeuverCard
 import org.geonav.app.ui.components.MapControlsBar
@@ -45,6 +50,7 @@ import org.geonav.app.ui.map.MapLibreMapView
 import org.geonav.family.Family
 import org.geonav.family.domain.PeerLocationState
 import org.geonav.app.ui.components.PersonSheet
+import java.util.Locale
 
 enum class NavigationUiState {
     IDLE,
@@ -68,7 +74,9 @@ fun MainMapScreen(
     val currentMapStyle by app.settingsRepository.currentStyle.collectAsState()
     val satelliteProviderUrl by app.settingsRepository.satelliteProviderUrl.collectAsState()
     val speedUnit by app.settingsRepository.speedUnit.collectAsState()
+    val autoZoomEnabled by app.settingsRepository.autoZoom.collectAsState()
     val savedPlaces by app.placesRepository.allSavedPlaces.collectAsState(initial = emptyList())
+    val recentSearches by app.searchRepository.recentSearches.collectAsState(initial = emptyList())
 
     // People layer: contacts currently sharing their position (from the :family module).
     // With sharing off and no circles, this is always empty and the app is a plain map.
@@ -91,7 +99,42 @@ fun MainMapScreen(
     var availableRoutes by remember { mutableStateOf<List<Route>>(emptyList()) }
     var selectedRoute by remember { mutableStateOf<Route?>(null) }
     var selectedMode by remember { mutableStateOf(TransportMode.DRIVE) }
-    var currentStepIndex by remember { mutableStateOf(0) }
+
+    // Turn-by-turn guidance: the engine consumes real GPS fixes and advances the
+    // maneuver index itself; `guidance` mirrors its output for the UI.
+    val guidanceEngine = remember { TurnByTurnEngine() }
+    var guidance by remember { mutableStateOf<GuidanceState?>(null) }
+    var rerouting by remember { mutableStateOf(false) }
+    var lastRerouteMs by remember { mutableLongStateOf(0L) }
+    var announcedArrival by remember { mutableStateOf(false) }
+    var lastSpokenStep by remember { mutableStateOf<RouteStep?>(null) }
+    val voiceGuidance by app.settingsRepository.voiceGuidance.collectAsState()
+
+    // Voice guidance: a real Android TTS engine, created once and shut down with the
+    // screen. Speech happens only through speakGuidance(), which honours the setting.
+    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+    DisposableEffect(context) {
+        val engine = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.getDefault()
+            }
+        }
+        tts = engine
+        onDispose {
+            engine.shutdown()
+            tts = null
+        }
+    }
+
+    fun speakGuidance(text: String) {
+        if (!voiceGuidance) return
+        val engine = tts ?: return
+        runCatching {
+            if (engine.isLanguageAvailable(Locale.getDefault()) >= TextToSpeech.LANG_AVAILABLE) {
+                engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "kinnav-guidance")
+            }
+        }
+    }
 
     // Asynchronous search
     fun performSearch(query: String) {
@@ -124,6 +167,75 @@ fun MainMapScreen(
         }
     }
 
+    // Turn-by-turn: every real fix feeds the engine, which advances maneuvers, detects
+    // arrival and flags deviation. Speech, rerouting and arrival handling all hang off
+    // this single source of truth so UI and voice stay in lockstep with actual position.
+    LaunchedEffect(uiState, selectedRoute?.id, fusionState.location) {
+        if (uiState != NavigationUiState.NAVIGATING) return@LaunchedEffect
+        val route = selectedRoute ?: return@LaunchedEffect
+        val location = fusionState.location ?: return@LaunchedEffect
+        val state = guidanceEngine.updateProgress(location) ?: return@LaunchedEffect
+        guidance = state
+
+        if (state.isArrived && !announcedArrival) {
+            announcedArrival = true
+            speakGuidance("You have arrived.")
+            // Teardown in a coroutine so a cancellation mid-snackbar cannot strand the
+            // navigation state half-torn-down.
+            coroutineScope.launch {
+                guidanceEngine.stopRoute()
+                guidance = null
+                tts?.stop()
+                cameraTilt = 0.0
+                uiState = NavigationUiState.IDLE
+                selectedRoute = null
+                snackbarHostState.showSnackbar("You have arrived")
+            }
+            return@LaunchedEffect
+        }
+
+        // Speak only when the maneuver actually changes (the engine advances at 25 m).
+        if (state.currentStep !== lastSpokenStep) {
+            lastSpokenStep = state.currentStep
+            speakGuidance(state.currentStep.instruction)
+        }
+
+        // Deviation: recalculate with a cooldown so a single bad fix cannot loop, and
+        // keep the reroute off this effect so a fix arriving mid-request cannot strand
+        // the in-flight flag.
+        val now = System.currentTimeMillis()
+        if (state.isOffRoute && !rerouting && now - lastRerouteMs > 15_000L) {
+            rerouting = true
+            lastRerouteMs = now
+            val destination = route.steps.lastOrNull()?.location ?: route.points.lastOrNull()
+            coroutineScope.launch {
+                try {
+                    if (destination == null) {
+                        snackbarHostState.showSnackbar("Off route — no destination to recalculate to")
+                        return@launch
+                    }
+                    val reroutes = app.routingRepository.calculateRoutes(
+                        origin = location,
+                        destination = destination,
+                        mode = route.mode
+                    )
+                    val newRoute = reroutes.firstOrNull()
+                    if (newRoute != null) {
+                        selectedRoute = newRoute
+                        guidanceEngine.startRoute(newRoute)
+                        guidance = null
+                        lastSpokenStep = null
+                        snackbarHostState.showSnackbar("Route recalculated")
+                    } else {
+                        snackbarHostState.showSnackbar("Off route — couldn't recalculate")
+                    }
+                } finally {
+                    rerouting = false
+                }
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -134,6 +246,8 @@ fun MainMapScreen(
             mapStyle = currentMapStyle,
             customSatelliteUrl = satelliteProviderUrl,
             userLocation = fusionState.location,
+            speedKmh = fusionState.speedKmh,
+            autoZoomBySpeed = autoZoomEnabled,
             isFollowingLocation = isFollowingLocation,
             recenterTrigger = recenterCounter,
             tilt = cameraTilt,
@@ -166,6 +280,11 @@ fun MainMapScreen(
                 onQueryChange = { performSearch(it) },
                 searchResults = searchResults,
                 onPlaceSelected = { place ->
+                    // A chosen result is the committed search — record it (move-to-top)
+                    // so the recent list reflects what the user actually looked up.
+                    if (searchQuery.isNotBlank()) {
+                        coroutineScope.launch { app.searchRepository.saveSearchQuery(searchQuery) }
+                    }
                     selectedPlace = place
                     searchQuery = ""
                     searchResults = emptyList()
@@ -175,6 +294,8 @@ fun MainMapScreen(
                 onCategoryFilter = { cat ->
                     performSearch(cat)
                 },
+                recentSearches = recentSearches.map { it.query },
+                onRecentSearch = { performSearch(it) },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
@@ -183,10 +304,12 @@ fun MainMapScreen(
 
         // Active Navigation Turn Maneuver Top Card
         if (uiState == NavigationUiState.NAVIGATING && selectedRoute != null) {
-            val steps = selectedRoute!!.steps
-            val step = if (currentStepIndex < steps.size) steps[currentStepIndex] else steps.lastOrNull()
+            val g = guidance
+            val step = g?.currentStep ?: selectedRoute!!.steps.firstOrNull()
             if (step != null) {
-                val dist = fusionState.location?.distanceTo(step.location) ?: step.distanceMeters
+                val dist = g?.distanceToNextManeuverMeters
+                    ?: fusionState.location?.distanceTo(step.location)
+                    ?: step.distanceMeters
                 ManeuverCard(
                     currentStep = step,
                     distanceMeters = dist,
@@ -358,12 +481,17 @@ fun MainMapScreen(
                     selectedRoute = route
                 },
                 onStartNavigation = { route ->
-                    currentStepIndex = 0
+                    guidanceEngine.startRoute(route)
+                    guidance = null
+                    announcedArrival = false
+                    lastSpokenStep = null
                     cameraTilt = 55.0 // Switch to 3D perspective for driving
                     isFollowingLocation = true
                     uiState = NavigationUiState.NAVIGATING
                 },
                 onDismiss = {
+                    guidanceEngine.stopRoute()
+                    guidance = null
                     uiState = NavigationUiState.IDLE
                     selectedRoute = null
                 }
@@ -379,12 +507,15 @@ fun MainMapScreen(
         ) {
             val route = selectedRoute!!
             NavigationBottomBar(
-                remainingSeconds = route.durationSeconds,
-                remainingDistanceMeters = route.distanceMeters,
+                remainingSeconds = guidance?.remainingDurationSeconds ?: route.durationSeconds,
+                remainingDistanceMeters = guidance?.remainingDistanceMeters ?: route.distanceMeters,
                 currentSpeedKmh = fusionState.speedKmh,
                 speedUnit = speedUnit,
                 speedLimitKmh = fusionState.speedLimitKmh,
                 onStopNavigation = {
+                    guidanceEngine.stopRoute()
+                    guidance = null
+                    tts?.stop()
                     cameraTilt = 0.0
                     uiState = NavigationUiState.IDLE
                     selectedRoute = null

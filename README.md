@@ -30,9 +30,14 @@ It is the merge of two projects by the same author:
 ## 🚀 What works today
 
 * 🗺️ Worldwide vector maps (MapLibre + OpenStreetMap)
-* 🧭 Turn-by-turn navigation (drive / walk / cycle) with route preview
+* 🧭 Turn-by-turn navigation (drive / walk / cycle) with route preview, live
+  maneuver guidance, deviation rerouting and optional voice announcements
 * 📡 Position fusion (GNSS + network + sensors, tunnel dead-reckoning)
-* 📴 Offline maps: download, manage and navigate with saved regions
+* 📴 Offline maps: download real map packages and navigate without a network —
+  the renderer reads the packs itself (zoom 8–15, under your current style)
+* 🎒 **Item finding**: mark keys/bike/luggage lost; any KinNav phone nearby with
+  "help others" on anonymously relays where the beacon was seen (rotating E2EE
+  pseudonyms; the relay can never link sightings to an item)
 * 🔎 Local and network search with history and saved places
 * 🚗 Android Auto navigation
 * 📍 GPX / KML / GeoJSON import & export
@@ -49,9 +54,9 @@ its own** until you turn it on.
   everything; there is a one-tap **STOP SHARING NOW** emergency button.
 * **End-to-end encrypted.** Positions are sealed with AES-256-GCM under a
   per-circle key. Keys are exchanged through invites, never sent to the server.
-* **LAN + relay.** Circles work over the local network and through an optional
-  relay that only ever forwards ciphertext. The default relay is Luogo's; you
-  can point KinNav at your own.
+* **Relay-only.** Circles sync through an optional relay that only ever forwards
+  ciphertext. The default relay is Luogo's; you can point KinNav at your own.
+  (Luogo's LAN transport was not ported — see `MERGE_NOTES.md`.)
 * **Precision control.** Round your shared position to a grid (100 m, 500 m,
   1 km, or precise) before it is encrypted; recipients' "±" honestly reflects
   the coarsening.

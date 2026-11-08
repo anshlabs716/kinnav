@@ -123,11 +123,16 @@ the app still works as a plain maps/navigation app.
 
 ## Not ported (and why)
 
-- **Luogo's "Nearby" Bluetooth radar** — a separate peer-discovery feature over
-  BLE/Wi-Fi beacons. Sharing works over LAN + relay without it; porting the
-  whole Nearby engine was out of scope for this merge. Left as a follow-up.
+- **Luogo's "Nearby" Bluetooth radar** — Luogo's full peer-discovery engine was
+  not ported. What KinNav has instead is a leaner, purpose-built subset: item
+  finding over rotating-id BLE beacons backed by the relay's sightings endpoints
+  (`org.geonav.family.finding`). In KinNav sharing itself runs over the relay
+  only (Luogo's LAN path was not ported either).
 - **Luogo's item finding / geofences / history / offline maps / routing** —
-  GeoNav has its own versions of these; they are not part of "who can see me".
+  GeoNav has its own offline maps and routing, and item finding has since been
+  re-implemented natively (`org.geonav.family.finding`, on the relay's sightings
+  endpoints). Geofences and location history are not part of "who can see me"
+  and were not ported.
 
 ## Build & test status
 

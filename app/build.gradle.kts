@@ -80,5 +80,7 @@ dependencies {
     // Location sharing with contacts, ported from Luogo-FOSS (see MERGE_NOTES.md)
     implementation(project(":family"))
 
+    testImplementation(libs.junit)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

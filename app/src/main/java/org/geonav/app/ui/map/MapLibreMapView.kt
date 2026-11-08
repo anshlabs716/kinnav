@@ -67,6 +67,8 @@ fun MapLibreMapView(
     mapStyle: MapStyleType,
     customSatelliteUrl: String? = null,
     userLocation: GeoPoint? = null,
+    speedKmh: Float = 0f,
+    autoZoomBySpeed: Boolean = false,
     isFollowingLocation: Boolean = true,
     recenterTrigger: Long = 0L,
     tilt: Double = 0.0,
@@ -125,15 +127,22 @@ fun MapLibreMapView(
         }
     }
 
-    // Camera follow user location
-    LaunchedEffect(userLocation, isFollowingLocation) {
+    // Camera follow user location. With speed-based auto zoom on, the follow zoom tracks
+    // velocity (zoomed in while slow, pulled back at speed); with it off the historical
+    // behaviour (never closer than 14) is kept exactly.
+    LaunchedEffect(userLocation, isFollowingLocation, speedKmh, autoZoomBySpeed) {
         if (isFollowingLocation && userLocation != null) {
             mapInstance?.let { map ->
                 val currentZoom = map.cameraPosition.zoom.coerceAtLeast(14.0)
+                val targetZoom = if (autoZoomBySpeed) {
+                    speedBasedZoom(speedKmh)
+                } else {
+                    currentZoom
+                }
                 val target = LatLng(userLocation.latitude, userLocation.longitude)
                 val cameraPosition = CameraPosition.Builder()
                     .target(target)
-                    .zoom(currentZoom)
+                    .zoom(targetZoom)
                     .tilt(tilt)
                     .build()
                 map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 750)
@@ -264,6 +273,19 @@ fun MapLibreMapView(
         },
         modifier = modifier.fillMaxSize()
     )
+}
+
+/**
+ * Follow-zoom as a function of speed, used only when the user enables speed-based auto
+ * zoom. Steps are coarse on purpose: one zoom level per speed band avoids the camera
+ * constantly micro-adjusting between GPS samples.
+ */
+private fun speedBasedZoom(speedKmh: Float): Double = when {
+    speedKmh < 10f -> 16.0
+    speedKmh < 35f -> 15.0
+    speedKmh < 65f -> 14.0
+    speedKmh < 100f -> 13.0
+    else -> 12.0
 }
 
 private fun updateLocationPuck(style: Style, userLocation: GeoPoint?) {

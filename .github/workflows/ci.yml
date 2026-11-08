@@ -9,9 +9,30 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  # The relay and its shared authorisation engine build without the Android SDK, so
+  # this job runs fast and covers the security-critical path end to end: engine tests,
+  # server build, then a live smoke test of health, registration and authz.
+  relay:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build / checks
-        run: echo "Add build and test steps for this project"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Relay engine tests and server build
+        run: ./gradlew -PrelayOnly=true test :relay:installDist --stacktrace
+      - name: Relay smoke test
+        run: |
+          ./relay/build/install/relay/bin/relay -addr 127.0.0.1:8099 &
+          sleep 3
+          curl -sf http://127.0.0.1:8099/api/health | grep -q '"ok":true'
+          TOKEN=$(curl -sf -X POST http://127.0.0.1:8099/api/users \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"ci","color":1,"publicKey":"dGVzdA"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          test -n "$TOKEN"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/groups)
+          test "$CODE" = "401"
+          pkill -f 'relay -addr 127.0.0.1:8099' || true

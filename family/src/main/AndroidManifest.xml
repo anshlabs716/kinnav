@@ -6,6 +6,22 @@
          GeoNav except RECEIVE_BOOT_COMPLETED, which the share-state recovery needs). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Item finding over BLE (rotating-id beacons, see org.geonav.family.finding).
+         neverForLocation: we read an explicit rotating pseudonym, not a location
+         inference, so scans do not demand ACCESS_FINE_LOCATION on API 31+.
+         The legacy pair is for API 30 and below, where scanning needs location grants. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
     <application>
 
         <!-- Keeps the sharing socket alive and the fix pipeline running while the screen is

@@ -1,6 +1,9 @@
 package org.geonav.app.ui.screens
 
+import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -68,8 +71,6 @@ import org.geonav.app.data.model.MapStyleType
 import org.geonav.app.data.repository.AppThemeMode
 import org.geonav.app.data.repository.SpeedUnit
 import org.geonav.app.data.storage.ExchangeResult
-import java.io.File
-import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,6 +98,106 @@ fun SettingsScreen(
     var showSatelliteDialog by remember { mutableStateOf(false) }
     var satelliteInputText by remember { mutableStateOf(satelliteUrl) }
     var showExportDialog by remember { mutableStateOf(false) }
+
+    // Export: the user picks a location with the system document creator, so the file
+    // lands somewhere they can actually reach — the old path wrote into app-private
+    // storage that no file manager could open.
+    var pendingExportFormat by remember { mutableStateOf<String?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val format = pendingExportFormat
+        pendingExportFormat = null
+        if (uri != null && format != null) {
+            coroutineScope.launch {
+                val places = app.placesRepository.savedPlaces.first()
+                val output = context.contentResolver.openOutputStream(uri)
+                if (output == null) {
+                    Toast.makeText(context, "Couldn't open the chosen file for writing", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val result = output.use { stream ->
+                    when (format) {
+                        "GPX" -> app.dataExchangeManager.exportGpx(places, stream)
+                        "KML" -> app.dataExchangeManager.exportKml(places, stream)
+                        "GeoJSON" -> app.dataExchangeManager.exportGeoJson(places, stream)
+                        else -> app.dataExchangeManager.exportCsv(places, stream)
+                    }
+                }
+                when (result) {
+                    is ExchangeResult.Success ->
+                        Toast.makeText(context, "Exported ${places.size} place(s)", Toast.LENGTH_LONG).show()
+                    is ExchangeResult.Error ->
+                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // Import: pick a GPX/KML/GeoJSON/CSV file, parse it with the existing data-exchange
+    // parser, and save every waypoint. Same-name, same-coordinate waypoints are skipped
+    // so re-importing a file is idempotent.
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val displayName = context.contentResolver
+                    .query(uri, null, null, null, null)
+                    ?.use { cursor ->
+                        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+                    }
+                val format = when {
+                    displayName == null -> null
+                    displayName.endsWith(".gpx", ignoreCase = true) -> "GPX"
+                    displayName.endsWith(".kml", ignoreCase = true) -> "KML"
+                    displayName.endsWith(".geojson", ignoreCase = true) ||
+                        displayName.endsWith(".json", ignoreCase = true) -> "GEOJSON"
+                    displayName.endsWith(".csv", ignoreCase = true) -> "CSV"
+                    else -> null
+                }
+                if (format == null) {
+                    Toast.makeText(
+                        context,
+                        "Unsupported file — use GPX, KML, GeoJSON or CSV",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@launch
+                }
+                val input = context.contentResolver.openInputStream(uri)
+                if (input == null) {
+                    Toast.makeText(context, "Couldn't open the selected file", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                when (val result = app.dataExchangeManager.importPlaces(input, format)) {
+                    is ExchangeResult.Error ->
+                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                    is ExchangeResult.Success -> {
+                        val existing = app.placesRepository.savedPlaces.first()
+                        var added = 0
+                        for (place in result.data) {
+                            val duplicate = existing.any { kept ->
+                                kept.name == place.name &&
+                                    Math.abs(kept.location.latitude - place.location.latitude) < 1e-6 &&
+                                    Math.abs(kept.location.longitude - place.location.longitude) < 1e-6
+                            }
+                            if (!duplicate) {
+                                app.placesRepository.savePlace(place)
+                                added++
+                            }
+                        }
+                        val message = when {
+                            result.data.isEmpty() -> "No waypoints found in the file"
+                            added == 0 -> "All ${result.data.size} waypoint(s) already saved"
+                            else -> "Imported $added place(s), skipped ${result.data.size - added} duplicate(s)"
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -327,6 +428,23 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clickable { importLauncher.launch(arrayOf("*/*")) }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.FileUpload, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Import Saved Places & Waypoints", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("Reads GPX, KML, GeoJSON and CSV files", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
                                 .clickable {
                                     coroutineScope.launch {
                                         app.searchRepository.clearHistory()
@@ -432,7 +550,7 @@ fun SettingsScreen(
                         Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("About GeoNav", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("About KinNav", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text("FOSS • Zero telemetry • MapLibre & OpenStreetMap", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -452,7 +570,7 @@ fun SettingsScreen(
                 text = {
                     Column {
                         Text(
-                            text = "GeoNav does not scrape unauthorized tiles. Enter your legitimate raster or vector tile endpoint (e.g., WMTS/XYZ URL template with {z}/{x}/{y}):",
+                            text = "KinNav does not scrape unauthorized tiles. Enter your legitimate raster or vector tile endpoint (e.g., WMTS/XYZ URL template with {z}/{x}/{y}):",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -499,20 +617,11 @@ fun SettingsScreen(
                             TextButton(
                                 onClick = {
                                     showExportDialog = false
-                                    coroutineScope.launch {
-                                        val places = app.placesRepository.savedPlaces.first()
-                                        val ext = format.lowercase()
-                                        val file = File(context.filesDir, "geonav_export_${System.currentTimeMillis()}.$ext")
-                                        FileOutputStream(file).use { out ->
-                                            when (format) {
-                                                "GPX" -> app.dataExchangeManager.exportGpx(places, out)
-                                                "KML" -> app.dataExchangeManager.exportKml(places, out)
-                                                "GeoJSON" -> app.dataExchangeManager.exportGeoJson(places, out)
-                                                "CSV" -> app.dataExchangeManager.exportCsv(places, out)
-                                            }
-                                        }
-                                        Toast.makeText(context, "Exported ${places.size} places to ${file.name}", Toast.LENGTH_LONG).show()
-                                    }
+                                    // SAF document creator: the user chooses where the
+                                    // file lands; we only fill in its content.
+                                    val ext = format.lowercase()
+                                    pendingExportFormat = format
+                                    exportLauncher.launch("kinnav_places.$ext")
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {

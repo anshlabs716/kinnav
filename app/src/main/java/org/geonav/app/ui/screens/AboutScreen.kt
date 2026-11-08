@@ -83,7 +83,7 @@ fun AboutScreen(
             ) {
                 Image(
                     painter = painterResource(R.drawable.img_app_icon),
-                    contentDescription = "GeoNav Logo",
+                    contentDescription = "KinNav Logo",
                     modifier = Modifier.size(76.dp)
                 )
             }
@@ -91,7 +91,7 @@ fun AboutScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "GeoNav",
+                text = "KinNav",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -198,7 +198,7 @@ fun AboutScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "GeoNav is an open source community project.\nRepository: anshlabs716/GeoNav",
+                        text = "KinNav is an open source community project.\nRepository: anshlabs716/kinnav",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
